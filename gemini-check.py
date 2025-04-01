@@ -10,15 +10,14 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Import LangChain components
-from langchain_community.llms import GooglePalm  # For Gemini API
+from langchain.llms import GooglePalm  # For Gemini API
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.base import BaseCallbackHandler
 
-# Import WhyLabs components - simplified imports
-import whylogs as why
-from whylogs.api import Logger
-# Note: We're removing the direct WhyLabs client imports and using whylogs instead
+# Import WhyLabs components - updated imports
+import whylogs
+# Remove the specific Logger import that's causing issues
 
 # Text analysis libraries
 import nltk
@@ -61,8 +60,8 @@ class WhyLabsCallbackHandler(BaseCallbackHandler):
         self.model_id = whylabs_default_model_id
         self.api_key = whylabs_api_key
         
-        # Initialize whylogs
-        why.init(api_key=whylabs_api_key)
+        # Initialize whylogs (using the imported module directly)
+        whylogs.init(api_key=whylabs_api_key)
         
         # Set up the embedding model for semantic similarity
         self.sentence_transformer = SentenceTransformer(embedding_model)
@@ -211,34 +210,59 @@ class WhyLabsCallbackHandler(BaseCallbackHandler):
             metrics: The analysis metrics
         """
         try:
-            # Create a WhyLogs logger 
-            logger = why.get_or_create_session().logger(dataset_name=self.model_id)
+            # Create a WhyLogs logger using the current API
+            session = whylogs.get_or_create_session()
+            logger = session.logger(dataset_id=self.model_id)
             
-            # Create a log entry with metadata
-            with logger.log() as profile:
-                # Log metadata
-                profile.set_metadata("session_id", session_id)
-                
-                # Log the raw text data
-                profile.track_text("prompt", prompt)
-                profile.track_text("response", response)
-                
-                # Log all the metrics as features
-                for category, values in metrics.items():
-                    if isinstance(values, dict):
-                        for key, value in values.items():
-                            if isinstance(value, (int, float)):
-                                profile.track(f"{category}.{key}", value)
-                    elif isinstance(values, (int, float)):
-                        profile.track(category, values)
-                    elif isinstance(values, bool):
-                        profile.track(category, 1 if values else 0)
+            # Log all collected metrics
+            result = logger.log(
+                {
+                    # Add metadata
+                    "session_id": session_id,
+                    "prompt": prompt,
+                    "response": response,
+                    
+                    # Add flattened metrics
+                    **self._flatten_metrics(metrics)
+                }
+            )
             
             print(f"Successfully logged model metrics to WhyLabs for session {session_id}")
             
         except Exception as e:
             print(f"Error logging to WhyLabs: {str(e)}")
-            print("Will continue execution without WhyLabs logging")
+            print("Continuing execution without WhyLabs logging")
+    
+    def _flatten_metrics(self, metrics: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+        """
+        Flatten nested metrics dictionary for whylogs.
+        
+        Args:
+            metrics: The metrics dictionary to flatten
+            prefix: Prefix for nested keys
+            
+        Returns:
+            Flattened dictionary of metrics
+        """
+        result = {}
+        for key, value in metrics.items():
+            key_name = f"{prefix}.{key}" if prefix else key
+            
+            if isinstance(value, dict):
+                # Recursively flatten nested dictionaries
+                nested_metrics = self._flatten_metrics(value, key_name)
+                result.update(nested_metrics)
+            elif isinstance(value, (int, float)):
+                # Add numeric values directly
+                result[key_name] = value
+            elif isinstance(value, bool):
+                # Convert booleans to integers
+                result[key_name] = 1 if value else 0
+            elif isinstance(value, str) and len(value) < 1000:
+                # Add short strings
+                result[key_name] = value
+                
+        return result
 
 
 def main():
