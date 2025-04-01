@@ -4,7 +4,6 @@ model performance metrics including bias, ROUGE, text quality, semantic similari
 regex pattern matching, toxicity, semantics, and refusals.
 """
 
-
 import os
 import json
 from typing import Dict, List, Any, Optional
@@ -12,15 +11,14 @@ import uuid
 
 # Import LangChain components
 from langchain_community.llms import GooglePalm  # For Gemini API
-from langchain_community.chains import LLMChain
-from langchain_community.prompts import PromptTemplate
-from langchain_community.callbacks.base import BaseCallbackHandler
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.callbacks.base import BaseCallbackHandler
 
-# Import WhyLabs components
-import whylabs_client
-from whylabs_client.api import models_api, dataset_profile_api
-from whylabs_client.models import ProfileUploadRequest
-import why  # WhyLabs logging library
+# Import WhyLabs components - simplified imports
+import whylogs as why
+from whylogs.api import Logger
+# Note: We're removing the direct WhyLabs client imports and using whylogs instead
 
 # Text analysis libraries
 import nltk
@@ -30,9 +28,6 @@ import re
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from detoxify import Detoxify
-
-from dotenv import load_dotenv
-load_dotenv()  
 
 # Download NLTK resources
 nltk.download('punkt')
@@ -61,18 +56,13 @@ class WhyLabsCallbackHandler(BaseCallbackHandler):
         """
         super().__init__()
         
-        # Set up WhyLabs client
+        # Set up WhyLabs configuration
         self.org_id = whylabs_org_id
         self.model_id = whylabs_default_model_id
+        self.api_key = whylabs_api_key
         
-        # Configure WhyLabs API client
-        configuration = whylabs_client.Configuration(
-            host="https://api.whylabsapp.com",
-            api_key={"ApiKeyAuth": whylabs_api_key}
-        )
-        self.api_client = whylabs_client.ApiClient(configuration)
-        self.models_api = models_api.ModelsApi(self.api_client)
-        self.profile_api = dataset_profile_api.DatasetProfileApi(self.api_client)
+        # Initialize whylogs
+        why.init(api_key=whylabs_api_key)
         
         # Set up the embedding model for semantic similarity
         self.sentence_transformer = SentenceTransformer(embedding_model)
@@ -212,7 +202,7 @@ class WhyLabsCallbackHandler(BaseCallbackHandler):
         metrics: Dict[str, Any]
     ) -> None:
         """
-        Log the analyzed data to WhyLabs.
+        Log the analyzed data to WhyLabs using whylogs.
         
         Args:
             session_id: Unique session identifier
@@ -221,51 +211,34 @@ class WhyLabsCallbackHandler(BaseCallbackHandler):
             metrics: The analysis metrics
         """
         try:
-            # Initialize WhyLabs logger
-            why.init(
-                org_id=self.org_id,
-                api_key=self.api_client.configuration.api_key["ApiKeyAuth"]
-            )
+            # Create a WhyLogs logger 
+            logger = why.get_or_create_session().logger(dataset_name=self.model_id)
             
-            # Create a WhyLabs logger for the model
-            logger = why.log(dataset_id=self.model_id)
+            # Create a log entry with metadata
+            with logger.log() as profile:
+                # Log metadata
+                profile.set_metadata("session_id", session_id)
+                
+                # Log the raw text data
+                profile.track_text("prompt", prompt)
+                profile.track_text("response", response)
+                
+                # Log all the metrics as features
+                for category, values in metrics.items():
+                    if isinstance(values, dict):
+                        for key, value in values.items():
+                            if isinstance(value, (int, float)):
+                                profile.track(f"{category}.{key}", value)
+                    elif isinstance(values, (int, float)):
+                        profile.track(category, values)
+                    elif isinstance(values, bool):
+                        profile.track(category, 1 if values else 0)
             
-            # Log the raw text data
-            logger.log_text(
-                feature_name="prompt",
-                value=prompt
-            )
-            logger.log_text(
-                feature_name="response",
-                value=response
-            )
-            
-            # Log all the metrics
-            for category, values in metrics.items():
-                if isinstance(values, dict):
-                    for key, value in values.items():
-                        if isinstance(value, (int, float)):
-                            logger.log_metric(
-                                feature_name=f"{category}.{key}",
-                                value=value
-                            )
-                elif isinstance(values, (int, float)):
-                    logger.log_metric(
-                        feature_name=category,
-                        value=values
-                    )
-                elif isinstance(values, bool):
-                    logger.log_metric(
-                        feature_name=category,
-                        value=1 if values else 0
-                    )
-            
-            # Upload the profile
-            logger.profile().write()
             print(f"Successfully logged model metrics to WhyLabs for session {session_id}")
             
         except Exception as e:
             print(f"Error logging to WhyLabs: {str(e)}")
+            print("Will continue execution without WhyLabs logging")
 
 
 def main():
