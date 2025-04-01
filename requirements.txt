@@ -3,10 +3,6 @@ langchain>=0.0.267
 google-api-python-client>=2.97.0
 google-auth>=2.22.0
 
-# WhyLabs monitoring
-whylabs-client>=0.11.1
-whylogs>=1.1.21
-why>=0.6.1
 
 # Text analysis libraries
 nltk>=3.8.1
