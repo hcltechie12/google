@@ -4,6 +4,7 @@ model performance metrics including bias, ROUGE, text quality, semantic similari
 regex pattern matching, toxicity, semantics, and refusals.
 """
 
+
 import os
 import json
 from typing import Dict, List, Any, Optional
@@ -29,6 +30,9 @@ import re
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from detoxify import Detoxify
+
+from dotenv import load_dotenv
+load_dotenv()  
 
 # Download NLTK resources
 nltk.download('punkt')
