@@ -11,10 +11,10 @@ from typing import Dict, List, Any, Optional
 import uuid
 
 # Import LangChain components
-from langchain.llms import GooglePalm  # For Gemini API
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.callbacks.base import BaseCallbackHandler
+from langchain_community.llms import GooglePalm  # For Gemini API
+from langchain_community.chains import LLMChain
+from langchain_community.prompts import PromptTemplate
+from langchain_community.callbacks.base import BaseCallbackHandler
 
 # Import WhyLabs components
 import whylabs_client
